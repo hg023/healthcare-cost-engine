@@ -1,0 +1,4 @@
+requests==2.31.0
+pandas==2.2.0
+ijson==3.2.3
+streamlit==1.32.0
