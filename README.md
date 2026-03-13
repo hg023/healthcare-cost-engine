@@ -5,11 +5,28 @@ visit costs and verify insurance coverage for SF-based primary care providers.
 
 ## POC Scope
 - **Geography:** San Francisco County
-- **Providers:** Primary care physicians (Family Medicine, Internal Medicine, 
-  General Practice, Geriatric Medicine)
 - **Insurance:** Anthem Blue Cross PPO
 - **Visit types:** Base office visit cost only — additional charges 
   (labs, procedures, vaccines) not included
+
+### Provider Taxonomy (NUCC v25.1)
+
+| Code | Specialty | Source |
+|---|---|---|
+| `207Q00000X` | Family Medicine | NUCC direct verification |
+| `207QA0505X` | Family Medicine — Adult Medicine | NUCC direct verification |
+| `207QG0300X` | Family Medicine — Geriatric Medicine | NUCC direct verification |
+| `208D00000X` | General Practice | NUCC direct verification |
+| `207R00000X` | Internal Medicine | NUCC direct verification |
+| `207RG0300X` | Internal Medicine — Geriatric Medicine | NUCC direct verification |
+
+**Source:** NUCC Health Care Provider Taxonomy Code Set v25.1  
+https://taxonomy.nucc.org
+
+**Out of scope for POC:** Med-Peds (no dedicated NUCC taxonomy code), 
+OB/GYN as PCP, Pediatrics, Hospitalist, Integrative Medicine
+
+### Visit CPT Codes
 
 | Code | Type | Complexity |
 |---|---|---|
@@ -32,8 +49,8 @@ vaccines, and procedures billed separately.
 
 | Source | Publisher | Used For | Status |
 |---|---|---|---|
-| MBC Physician Database | Medical Board of CA | SF provider list + license status | Active |
-| NPPES | CMS | NPI resolution for rate lookup | In progress |
+| NPPES | CMS | Primary provider list + NPI | Active |
+| MBC Physician Database | Medical Board of CA | License status verification | Active |
 | Anthem TiC MRF | Anthem Blue Cross | Negotiated rates — Anthem PPO | POC |
 | Blue Shield TiC MRF | Blue Shield of CA | Negotiated rates — Blue Shield HMO + PPO | Planned |
 | Kaiser TiC MRF | Kaiser Permanente | Negotiated rates — Kaiser HMO | Planned |
@@ -42,9 +59,9 @@ vaccines, and procedures billed separately.
 
 ## Pipeline
 ```
-MBC database → SF active PCPs (964)
+NPPES → SF active PCPs by taxonomy code + NPI
       ↓
-NPPES fuzzy match → NPI per provider
+MBC → verify license is active
       ↓
 Anthem TiC MRF → negotiated rate by NPI + CPT code
       ↓
@@ -55,18 +72,20 @@ Cost estimator UI (Streamlit)
 
 | Step | Description | Status |
 |---|---|---|
-| 1 | SF PCP extraction from MBC | Done |
-| 2 | NPI matching via NPPES | In progress |
+| 1 | SF PCP extraction from NPPES | In progress |
+| 2 | License verification via MBC | Not started |
 | 3 | Anthem TiC MRF rate ingestion | Not started |
 | 4 | Streamlit UI | Not started |
 
 ## Known Issues
-- MBC survey is voluntary — some active physicians have no practice location 
-  or specialty data on file
-- NPI fuzzy match on name + zip will miss providers with address discrepancies
-- TiC MRF negotiated rates reflect insurer-provider contracts, not patient OOP 
-  costs (which depend on deductible + coinsurance)
-- Cost estimate covers base visit only — labs, imaging, vaccines billed separately
+- NPPES taxonomy is self-selected by provider — some PCPs may use 
+  non-standard taxonomy codes
+- MBC survey is voluntary — some active physicians have no practice 
+  location or specialty data on file
+- TiC MRF negotiated rates reflect insurer-provider contracts, not patient 
+  OOP costs (which depend on deductible + coinsurance)
+- Cost estimate covers base visit only — labs, imaging, vaccines billed 
+  separately
 
 ## Stack
 Python, pandas, pyodbc, ijson, SQLite, Streamlit
