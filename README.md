@@ -1,25 +1,23 @@
 # Healthcare Cost Engine
 
-> Transforming CMS-mandated Transparency in Coverage (TiC) machine-readable files into accurate, upfront cost predictions for patients navigating primary care in San Francisco.
+Healthcare Cost Engine is a price transparency tool that helps people predict and understand the cost of a healthcare visit before they book an appointment.
 
-**Status:** Pilot — rate extraction complete, UI in development  
-**Author:** Hina Ghazi · [github.com/hg023](https://github.com/hg023)  
-**Stack:** Python · ijson · SQLite · Streamlit · NPPES API · Anthem TiC MRF (CMS schema v2.0)
+The engine utilizes publicly available negotiated rates for in-network providers and services, as mandated by the Transparency in Coverage Rule. It extracts, normalizes, and surfaces data from machine-readable files (MRFs) so people can review a list of providers and compare costs upfront in order to make informed decisions before scheduling a visit.
 
 ---
 
-## Problem
+## How it works
+| # | Source | Description | Publisher | Format | Key Attributes | Raw Data Fields |
+|---|--------|-------------|-----------|--------|----------------|-----------------|
+| 1 | National Provider Identifier Registry (NPPES) | Registry of licensed healthcare providers in the US | Centers for Medicare & Medicaid Services (CMS) | CSV | NPI, Provider Name, Specialty, Credential, Address, Phone | npi, provider_first_name, provider_last_name, provider_credential_text, provider_first_line_business_practice_location_address, provider_business_practice_location_address_city_name, provider_business_practice_location_address_postal_code, provider_business_practice_location_address_telephone_number, healthcare_provider_taxonomy_code |
+| 2 | Insurance Carrier | Negotiated rates for in-network providers and services, as mandated by the Transparency in Coverage (TiC) Rule | Insurance Carrier | Machine-Readable File (MRF) — JSON | Provider group, Tax ID, Network, Billing code, Negotiated rate, Rate type, Billing class | provider_group_id, tin.type, tin.value, network_name, billing_code, billing_code_type, negotiated_rate, negotiated_type, billing_class, expiration_date, service_code, billing_code_modifier |
+| 3 | Current Procedural Terminology (CPT) Codes | Standardized codes defining the type and complexity of a healthcare service | American Medical Association (AMA) / Centers for Medicare & Medicaid Services (CMS) | CSV | Billing code, Description, Complexity level | procedure_code, short_description, long_description, complexity_level |
 
-The TiC Rule (45 CFR Parts 147, 150, 158 — effective July 2022) requires insurers to publish monthly machine-readable files containing every negotiated rate for every in-network provider. The data is public. The access is not.
 
-MRF files are multi-gigabyte JSON structures requiring specialized infrastructure to process. The Anthem CA in-network file alone is **11.91 GB compressed**. No patient can realistically use this data directly.
 
-The result:
-- Patients cannot compare provider costs before choosing one
-- When the EOB arrives, CPT codes appear with brief descriptions that rarely explain why a code was used, whether it was expected, or how it maps to what happened in the visit
-- The gap between an estimated cost and the final bill is a direct consequence of inaccessible, poorly explained data
+------------------------------
 
-**This project closes that gap** — extracting, normalizing, and surfacing TiC data so patients can find in-network providers, understand the billing codes that drive their visit cost at the level of detail that appears on their actual bill, and anticipate their final EOB before the appointment.
+
 
 ---
 
@@ -96,78 +94,7 @@ The result:
 
 ---
 
-## User Flow
 
-### Step 1 — Insurance and employer
-User selects Anthem PPO and their employer. Employer determines which negotiated rates apply — the same provider can have different rates across different employer plans. Pilot uses a curated list of pre-processed SF employers. Users whose employer is not listed see the Prudent Buyer PPO range with a clear caveat.
-
-### Step 2 — Visit type
-User selects new patient or existing patient. Maps to CPT code family behind the scenes — no codes shown at this step.
-
-### Step 3 — Location
-User enters SF zip code or neighborhood. Filters to providers with a practice location in or near that area.
-
-### Step 4 — Provider results
-Ranked list of matching in-network providers showing name, specialty, address, phone, and estimated cost range for their visit type. Sortable by cost and distance.
-
-### Step 5 — Billing detail
-Clicking a provider shows the full CPT code breakdown — the same structure that will appear on their EOB after the visit:
-
-| What appears on your EOB | Plain English | Estimated Anthem Rate |
-|---|---|---|
-| 99203 | New patient visit — low complexity | $135 |
-| G2211 | Ongoing care relationship add-on | +$21 |
-| **Total estimated** | | **$156** |
-
-Each code includes: plain-language description, estimated negotiated rate, whether it is likely for their visit type, and a clear note that patient responsibility depends on their specific plan's deductible, copay, and coinsurance.
-
----
-
-## Data Pipeline
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                        DATA SOURCES                          │
-├─────────────────┬──────────────────┬────────────────────────┤
-│   NPPES API     │   MBC Access DB  │   Anthem TiC MRF       │
-│   CMS · weekly  │  CA DCA · weekly │  Anthem · monthly      │
-└────────┬────────┴────────┬─────────┴──────────┬─────────────┘
-         │                 │                     │
-         ▼                 ▼                     ▼
-  fetch_sf_providers_   MBC license        extract_anthem_
-  nppes.py              verification       rates.py
-  ─────────────────     (skipped:          ──────────────
-  Filter by:            pilot)             Pass 1: stream
-  · SF zip codes                           provider_references
-  · NUCC taxonomy                          → NPI lookup
-  · Status = Active                        
-                                           Pass 2: stream
-                                           in_network
-                                           → match CPT codes
-                                           → extract rates
-         │                                      │
-         └──────────────────┬───────────────────┘
-                            ▼
-              ┌─────────────────────────┐
-              │      SQLite Database    │
-              │                         │
-              │  providers table        │
-              │  rates table            │
-              │  13,167 rate records    │
-              │  566 SF providers       │
-              │  10 CPT codes           │
-              └────────────┬────────────┘
-                           │
-                           ▼
-              ┌─────────────────────────┐
-              │     Streamlit UI        │
-              │   (in development)      │
-              └─────────────────────────┘
-```
-
----
-
-## MRF Architecture
 
 ### CMS TiC Schema v2.0 — In-Network Rates File Structure
 
@@ -227,47 +154,7 @@ Pass 2 — in_network section
 
 ---
 
-## Data Sources
 
-| Source | Publisher | Mandate | Used For | Refresh |
-|---|---|---|---|---|
-| NPPES National Provider Registry | CMS | HIPAA — every billing provider must have NPI | SF provider list — NPI, name, address, specialty | Weekly |
-| Medical Board of California | CA Dept of Consumer Affairs | CA Business & Professions Code | License status verification | Weekly |
-| Anthem TiC MRF — In-Network Rates | Anthem Blue Cross CA | 45 CFR Parts 147, 150, 158 | Negotiated rates by NPI + CPT code | Monthly |
-| NUCC Taxonomy Code Set v25.1 | NUCC / CMS | HIPAA standard code set | Provider specialty classification | Biannual |
-| CMS E/M Services Guide | CMS / AMA | Medicare PFS Final Rule | CPT code definitions + billing class | Annual |
-
----
-
-## Data Architecture
-
-### Pilot (Local)
-
-| Component | Technology |
-|---|---|
-| Provider extraction | Python 3.14 · pandas · requests — NPPES REST API |
-| License verification | Python · pyodbc — MBC Access DB (.accdb) — skipped in pilot |
-| MRF ingestion | Python · ijson streaming parser · gzip — local file |
-| Rate storage | SQLite |
-| UI | Streamlit — in development |
-
-### Phase 1 (Hosted Beta)
-
-| Component | Technology |
-|---|---|
-| Rate database | Supabase (PostgreSQL) |
-| UI hosting | Streamlit Community Cloud |
-| MRF ingestion pipeline | Python · GitHub Actions — monthly schedule |
-| Employer file access | Playwright — signed CloudFront URL automation |
-| Monitoring | Datadog |
-
-### Data Refresh Cadence
-
-| Source | Frequency |
-|---|---|
-| Anthem TiC MRF | Monthly — published 1st of each month |
-| NPPES provider registry | Weekly |
-| MBC license database | Weekly — Monday refresh |
 
 ---
 
@@ -312,43 +199,7 @@ This tool is a pre-shopping aid, not a Good Faith Estimate (GFE). Patients are d
 - Combined CA MRF (11.91 GB) requires full-file download and local processing — not suitable for real-time per-query processing
 - Known industry access barrier — addressed by commercial vendors via dedicated infrastructure
 
----
 
-## Pipeline Status
-
-| Step | Description | Status |
-|---|---|---|
-| 1 | SF PCP extraction from NPPES | ✅ Done — 1,337 providers |
-| 2 | License verification via MBC | ⏭ Skipped — pilot |
-| 3 | Anthem MRF download | ✅ Done — 11.91 GB |
-| 4 | Pass 1 — provider group lookup | ✅ Done — 5.4M groups, 566 SF providers found |
-| 5 | Pass 2 — rate extraction | ✅ Done — 13,167 rates across 10 CPT codes |
-| 6 | Rate validation vs Medicare benchmark | 🔄 In progress |
-| 7 | Streamlit UI | 🔄 In development |
-
----
-
-## Project Structure
-
-```
-healthcare-cost-engine/
-├── fetch_sf_providers_nppes.py   # NPPES provider extraction
-├── clean_providers.py            # Filter to valid SF zips + taxonomy
-├── extract_anthem_rates.py       # Two-pass MRF rate extraction
-├── download_mrf.py               # MRF file download with resume
-├── find_ca_mrf.py                # Anthem index scan — CA URL extraction
-├── peek_mrf.py / peek_mrf2.py   # MRF file inspection utilities
-├── check_mrf.py / check_mrf_sizes.py  # MRF access + size checks
-├── explore_mbc.py                # MBC Access DB exploration
-├── explore_survey_codes.py       # MBC survey code reference
-├── lookup_doctor.py              # Single provider lookup utility
-├── data/                         # Output files (gitignored)
-│   ├── sf_providers_clean.csv    # 1,337 SF primary care providers
-│   ├── anthem_ca_mrf_urls.txt    # 17,176 CA Anthem plan entries
-│   ├── group_lookup.pkl          # Provider group → NPI lookup
-│   └── anthem_rates.db           # SQLite — 13,167 rate records
-└── README.md
-```
 
 ---
 
@@ -368,6 +219,3 @@ healthcare-cost-engine/
 
 ---
 
-*Healthcare Cost Engine · March 2026 · Hina Ghazi*  
-*Data sources: CMS NPPES · Medical Board of California · Anthem Blue Cross CA TiC MRF*  
-*Regulatory basis: 45 CFR Parts 147, 150, 158 (Transparency in Coverage Rule)*
